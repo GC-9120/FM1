@@ -70,6 +70,8 @@ public class Result implements Parcelable {
     private String format;
     @SerializedName("click")
     private String click;
+    @SerializedName("js")
+    private String js;
     @SerializedName("key")
     private String key;
     @SerializedName("pagecount")
@@ -235,6 +237,14 @@ public class Result implements Parcelable {
 
     public String getClick() {
         return TextUtils.isEmpty(click) ? "" : click;
+    }
+
+    public void setJs(String js) {
+        this.js = js;
+    }
+
+    public String getJs() {
+        return TextUtils.isEmpty(js) ? "" : js;
     }
 
     public void setClick(String click) {

@@ -1,6 +1,7 @@
 package com.undcover.freedom.pyramid;
 
 import android.content.Context;
+import android.text.TextUtils;
 
 import androidx.collection.ArrayMap;
 
@@ -8,11 +9,19 @@ import com.chaquo.python.PyObject;
 import com.github.catvod.Proxy;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Json;
+import com.github.tvbox.osc.util.LOG;
 import com.google.common.net.HttpHeaders;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.whl.quickjs.wrapper.QuickJSContext;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,96 +30,281 @@ import fi.iki.elonen.NanoHTTPD;
 import okhttp3.Headers;
 
 public class Spider extends com.github.catvod.crawler.Spider {
+    private PyObject pyApp;
+    private PyObject pySpider;
+    private String name;
+    private String cachePath;
+    private String extInfo;
 
-    private final PyObject app;
-    private final PyObject obj;
-    private final Gson gson;
-
-    public Spider(PyObject app, PyObject obj) {
-        this.gson = new Gson();
-        this.app = app;
-        this.obj = obj;
+    public Spider(PyObject pyApp, String name, String cache, String ext) {
+        this.pyApp = pyApp;
+        this.cachePath = cache;
+        this.name = name;
+        this.extInfo = ext;
     }
 
     @Override
-    public void init(Context context) {
-        app.callAttr("init", obj);
-    }
+    public void init(Context context, String url) {
+        PyObject retValue = pyApp.callAttr("downloadPlugin", cachePath, url);
 
-    @Override
-    public void init(Context context, String extend) {
-        app.callAttr("init", obj, extend);
-    }
+        if (null == extInfo) extInfo = "";
+        String path = retValue.toString();
+        File file = new File(path);
+        if (file.exists()) {
+            pySpider = pyApp.callAttr("loadFromDisk", path);
 
-    @Override
-    public String homeContent(boolean filter) {
-        return app.callAttr("homeContent", obj, filter).toString();
-    }
-
-    @Override
-    public String homeVideoContent() {
-        return app.callAttr("homeVideoContent", obj).toString();
-    }
-
-    @Override
-    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
-        return app.callAttr("categoryContent", obj, tid, pg, filter, gson.toJson(extend)).toString();
-    }
-
-    @Override
-    public String detailContent(List<String> ids) {
-        return app.callAttr("detailContent", obj, gson.toJson(ids)).toString();
-    }
-
-    @Override
-    public String searchContent(String key, boolean quick) {
-        return app.callAttr("searchContent", obj, key, quick).toString();
-    }
-
-    @Override
-    public String searchContent(String key, boolean quick, String pg) {
-        return app.callAttr("searchContentPage", obj, key, quick, pg).toString();
-    }
-
-    @Override
-    public String playerContent(String flag, String id, List<String> vipFlags) {
-        return replaceProxy(app.callAttr("playerContent", obj, flag, id, gson.toJson(vipFlags)).toString());
-    }
-
-    @Override
-    public boolean manualVideoCheck() {
-        return app.callAttr("manualVideoCheck", obj).toBoolean();
-    }
-
-    @Override
-    public boolean isVideoFormat(String url) {
-        return app.callAttr("isVideoFormat", obj, url).toBoolean();
-    }
-
-    @Override
-    public Object[] proxyLocal(Map<String, String> params) throws Exception {
-        List<PyObject> list = app.callAttr("localProxy", obj, gson.toJson(params)).asList();
-        JsonObject action = Json.parse(list.get(2).toString()).getAsJsonObject();
-        Map<String, String> headers = Json.toMap(action.get("header"));
-        String url = action.get("url").getAsString();
-        String content = list.get(3).toString();
-        String type = list.get(1).toString();
-        int code = list.get(0).toInt();
-        if (action.get("type").getAsString().equals("redirect")) {
-            NanoHTTPD.Response response = NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.lookup(code), NanoHTTPD.MIME_HTML, "");
-            for (Map.Entry<String, String> entry : headers.entrySet()) response.addHeader(entry.getKey(), entry.getValue());
-            response.addHeader(HttpHeaders.LOCATION, url);
-            return new Object[]{response};
-        } else if (action.get("type").getAsString().equals("stream")) {
-            ArrayMap<String, String> param = Json.toArrayMap(action.get("param"));
-            return new Object[]{code, type, OkHttp.newCall(url, Headers.of(headers), param).execute().body().byteStream()};
+            List<PyObject> poList = pyApp.callAttr("getDependence", pySpider).asList();
+            for (PyObject po : poList) {
+                String api = po.toString();
+                String depUrl = url.substring(0, url.lastIndexOf(47) + 1) + api + ".py";
+                String tmpPath = pyApp.callAttr("downloadPlugin", cachePath, depUrl).toString();
+                if (!new File(tmpPath).exists()) {
+                    PyLog.d(api + "加载插件依赖失败!");
+                    //return;
+                } else {
+                    PyLog.d(api + ": 加载插件依赖成功！");
+                }
+            }
+            pyApp.callAttr("init", pySpider, extInfo);
+            PyLog.d(name + ": 下載插件成功！");
         } else {
-            if (content.isEmpty()) content = OkHttp.newCall(url, Headers.of(headers)).execute().body().string();
-            return new Object[]{code, type, new ByteArrayInputStream(replaceProxy(content).getBytes())};
+            PyLog.d(name + "下载插件失败");
         }
     }
 
-    private String replaceProxy(String content) {
-        return content.replace("http://127.0.0.1:UndCover/proxy", Proxy.getUrl(true));
+    public JSONObject map2json(HashMap<String, String> extend) {
+        JSONObject jo = new JSONObject();
+        try {
+            if (extend != null) {
+                for (String key : extend.keySet()) {
+                    jo.put(key, extend.get(key));
+                }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return jo;
     }
+
+    public JSONObject map2json(Map extend) {
+        JSONObject jo = new JSONObject();
+        try {
+            if (extend != null) {
+                for (Object key : extend.keySet()) {
+                    jo.put(key.toString(), extend.get(key));
+                }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return jo;
+    }
+
+    public JSONArray list2json(List<String> array) {
+        JSONArray ja = new JSONArray();
+        if (array != null) {
+            for (String str : array) {
+                ja.put(str);
+            }
+        }
+        return ja;
+    }
+
+    public String paramLog(Object... obj) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("request params:[");
+        for (Object o : obj) {
+            sb.append(o).append("-");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    public String clearAdRemove(String adRemove, String str) {
+        if(!TextUtils.isEmpty(adRemove)){
+            if(adRemove.startsWith("js:")){
+                adRemove = adRemove.substring(3);
+                try {
+                    QuickJSContext jSContext = QuickJSContext.create();
+                    jSContext.getGlobalObject().setProperty("input", str);
+                    return (String) jSContext.evaluate(adRemove);
+                } catch (Exception e) {
+                    LOG.e(e);
+                    return str;
+                }
+            }
+            if(adRemove.startsWith("reg:")){
+                adRemove = adRemove.substring(4);
+                return str.replaceAll(adRemove, "");
+            }
+        }
+        return str;
+    }
+
+    @Override
+    public Object[] proxyLocal(Map params) {
+        if(params.containsKey("adRemove")){
+            try {
+                String adRemove = params.get("adRemove").toString();
+                String url = params.get("url").toString();
+                Map<String, String> headers = Json.toMap(URLDecoder.decode(params.get("headers").toString()));
+                String content = OkHttp.newCall(url, Headers.of(headers)).execute().body().string();
+                content = clearAdRemove(adRemove, content);
+                return new Object[]{200, "video/MP2T", new ByteArrayInputStream(content.getBytes())};
+            } catch (Exception e) {
+                LOG.e(e);
+                return new Object[]{200, "text/plain", null};
+            }
+        } else {
+            PyLog.nw("localProxy", map2json(params).toString());
+            List<PyObject> poList = pyApp.callAttr("localProxy", pySpider, map2json(params).toString()).asList();
+
+            Map<PyObject, PyObject> headers = null;
+            if (poList.size() > 3) {
+                headers = poList.get(3).asMap();
+            }
+            int code = poList.get(0).toInt();
+            String type = poList.get(1).toString();
+
+            PyObject r2 = poList.get(2);
+            if (r2 == null) {
+                return new Object[]{code, type, null, headers};
+            }
+            LOG.e("PyType", poList.get(2).type().toString());
+            if (r2.type().toString().contains("str")) {
+                return new Object[]{code, type, new ByteArrayInputStream(replaceLocalUrl(r2.toString()).getBytes()), headers};
+            } else if (r2.type().toString().contains("bytes")) {
+                return new Object[]{code, type, new ByteArrayInputStream(r2.toJava(byte[].class)), headers};
+            }
+            LOG.e("不支持此类型:" + poList.get(2).type());
+            return new Object[]{code, type, null, headers};
+        }
+    }
+
+    public String replaceLocalUrl(String content) {
+        return content.replace("http://127.0.0.1:UndCover/proxy", Loader.localProxyUrl());
+    }
+
+    /**
+     * 首页数据内容
+     *
+     * @param filter 是否开启筛选
+     * @return
+     */
+    @Override
+    public String homeContent(boolean filter) {
+        PyLog.nw("homeContent" + "-" + name, paramLog(filter));
+        PyObject po = pyApp.callAttr("homeContent", pySpider, filter);
+        String rsp = po.toString();
+        PyLog.nw("homeContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * 首页最近更新数据 如果上面的homeContent中不包含首页最近更新视频的数据 可以使用这个接口返回
+     *
+     * @return
+     */
+    @Override
+    public String homeVideoContent() {
+        PyLog.nw("homeVideoContent" + "-" + name, "");
+        PyObject po = pyApp.callAttr("homeVideoContent", pySpider);
+        String rsp = po.toString();
+        PyLog.nw("homeVideoContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * 分类数据
+     *
+     * @param tid
+     * @param pg
+     * @param filter
+     * @param extend
+     * @return
+     */
+    @Override
+    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
+        PyLog.nw("categoryContent" + "-" + name, paramLog(tid, pg, filter, map2json(extend).toString()));
+        PyObject po = pyApp.callAttr("categoryContent", pySpider, tid, pg, filter, map2json(extend).toString());
+        String rsp = po.toString();
+        PyLog.nw("categoryContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * 详情数据
+     *
+     * @param ids
+     * @return
+     */
+    @Override
+    public String detailContent(List<String> ids) {
+        PyLog.nw("detailContent" + "-" + name, paramLog(list2json(ids).toString()));
+        PyObject po = pyApp.callAttr("detailContent", pySpider, list2json(ids).toString());
+        String rsp = po.toString();
+        PyLog.nw("detailContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * 搜索数据内容
+     *
+     * @param key
+     * @param quick
+     * @return
+     */
+    @Override
+    public String searchContent(String key, boolean quick) {
+        PyLog.nw("searchContent" + "-" + name, paramLog(key, quick));
+        PyObject po = pyApp.callAttr("searchContent", pySpider, key, quick);
+        String rsp = po.toString();
+        PyLog.nw("searchContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * 播放信息
+     *
+     * @param flag
+     * @param id
+     * @return
+     */
+    @Override
+    public String playerContent(String flag, String id, List<String> vipFlags) {
+        PyLog.nw("playerContent" + "-" + name, paramLog(flag, id, list2json(vipFlags).toString()));
+        PyObject po = pyApp.callAttr("playerContent", pySpider, flag, id, list2json(vipFlags).toString());
+        String rsp = replaceLocalUrl(po.toString());
+        PyLog.nw("playerContent" + "-" + name, rsp);
+        return rsp;
+    }
+
+    /**
+     * webview解析时使用 可自定义判断当前加载的 url 是否是视频
+     *
+     * @param url
+     * @return
+     */
+    @Override
+    public boolean isVideoFormat(String url) {
+        PyLog.nw("isVideoFormat" + "-" + name, url);
+        PyObject po = pyApp.callAttr("isVideoFormat", pySpider, url);
+        boolean rsp = po.toBoolean();
+        PyLog.nw("isVideoFormat" + "-" + name, rsp + "");
+        return rsp;
+    }
+
+    /**
+     * 是否手动检测webview中加载的url
+     *
+     * @return
+     */
+    @Override
+    public boolean manualVideoCheck() {
+        PyObject po = pyApp.callAttr("manualVideoCheck", pySpider);
+        boolean rsp = po.toBoolean();
+        //PyLog.nw("manualVideoCheck" + "-" + name, rsp + "");
+        return rsp;
+    }
+
 }
