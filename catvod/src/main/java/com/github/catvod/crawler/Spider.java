@@ -63,6 +63,9 @@ public abstract class Spider {
     public void destroy() {
     }
 
+    public void cancelByTag() {
+    }
+
     public static Dns safeDns() {
         return OkHttp.dns();
     }

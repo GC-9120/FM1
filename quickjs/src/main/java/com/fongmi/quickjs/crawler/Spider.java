@@ -13,10 +13,12 @@ import com.fongmi.quickjs.utils.JSUtil;
 import com.fongmi.quickjs.utils.Module;
 import com.github.catvod.utils.Asset;
 import com.github.catvod.utils.Json;
+import com.github.tvbox.osc.util.LOG;
 import com.whl.quickjs.wrapper.JSArray;
 import com.whl.quickjs.wrapper.JSMethod;
 import com.whl.quickjs.wrapper.JSObject;
 import com.whl.quickjs.wrapper.QuickJSContext;
+import com.whl.quickjs.wrapper.QuickJSException;
 
 import org.json.JSONArray;
 
@@ -143,10 +145,28 @@ public class Spider extends com.github.catvod.crawler.Spider {
 
     private void createCtx() {
         ctx = QuickJSContext.create();
-        ctx.setConsole(new Console());
+        ctx.setConsole(new Console(){
+            @Override
+            public void log(String s) {
+                LOG.i("QuJs", s);
+            }
+        });
         ctx.evaluate(Asset.read("js/lib/http.js"));
-        Global.create(ctx, executor).setProperty();
+
+        Global global = Global.create(ctx, executor);
+        global.setProperty();
         ctx.getGlobalObject().setProperty("local", Local.class);
+        ctx.getGlobalObject().setProperty("pd", args -> {
+            try {
+                if(args.length > 2){
+                    return global.pd(args[0].toString(), args[1].toString(), args[2].toString());
+                }
+                return global.pd(args[0].toString(), args[1].toString(), "");
+            } catch (Exception e) {
+                throw new QuickJSException(
+                        e.getMessage());
+            }
+        });
         ctx.setModuleLoader(new QuickJSContext.BytecodeModuleLoader() {
             @Override
             public String moduleNormalizeName(String baseModuleName, String moduleName) {

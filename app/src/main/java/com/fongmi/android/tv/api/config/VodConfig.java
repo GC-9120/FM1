@@ -27,6 +27,8 @@ import com.google.gson.JsonObject;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -267,11 +269,13 @@ public class VodConfig {
         jarLoader.setRecent(jar);
     }
 
-    public Object[] proxyLocal(Map<String, String> params) {
+    public Object[] proxyLocal(Map<String, String> params) throws UnsupportedEncodingException {
         if ("js".equals(params.get("do"))) {
             return jsLoader.proxyInvoke(params);
         } else if ("py".equals(params.get("do"))) {
             return pyLoader.proxyInvoke(params);
+        } else if ("ck".equals(params.get("do"))) {
+            return new Object[]{200, "text/plain; charset=utf-8", new ByteArrayInputStream("OK".getBytes("UTF-8"))};
         } else {
             return jarLoader.proxyInvoke(params);
         }

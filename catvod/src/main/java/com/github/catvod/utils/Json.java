@@ -2,6 +2,7 @@ package com.github.catvod.utils;
 
 import androidx.collection.ArrayMap;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -73,6 +74,14 @@ public class Json {
         Map<String, String> map = new HashMap<>();
         JsonObject object = safeObject(element);
         for (Map.Entry<String, JsonElement> entry : object.entrySet()) map.put(entry.getKey(), safeString(object, entry.getKey()));
+        return map;
+    }
+
+    public static Map<String, String> toMap(String json) {
+        JsonElement element = new Gson().toJsonTree(json);
+        Map<String, String> map = new HashMap<>();
+        JsonObject object = safeObject(element);
+        for (String key : object.keySet()) map.put(key, safeString(object, key));
         return map;
     }
 

@@ -119,7 +119,6 @@ public class Global {
     }
 
     @Keep
-    @JSMethod
     public String pd(String html, String rule, String urlKey) {
         return parser.pdfh(html, rule, urlKey);
     }

@@ -42,10 +42,11 @@ public class PyLoader {
     public Spider getSpider(String key, String api, String ext) {
         try {
             if (spiders.containsKey(key)) return spiders.get(key);
-            Method method = loader.getClass().getMethod("spider", Context.class, String.class, String.class);
-            Spider spider = (Spider) method.invoke(loader, App.get(), key, api);
-            spider.init(App.get(), ext);
-            spiders.put(key, spider);
+            Method method = loader.getClass().getMethod("spider", Context.class, String.class, String.class, String.class);
+            Spider spider = (Spider) method.invoke(loader, App.get(), key, api, ext);
+            if(spider != null){
+                spiders.put(key, spider);
+            }
             return spider;
         } catch (Throwable e) {
             e.printStackTrace();
